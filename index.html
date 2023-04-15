@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>PlayFab Test</title>
+    <script type="text/javascript" src="https://download.playfab.com/PlayFabClientApi.js"></script>
+	<!--<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.js"></script>-->
+	<script src="signalr.js"></script><!-- above script, but removed headers X-Requested-With and X-SignalR-User-Agent -->
+	<script>
+		PlayFab.settings.titleId = "<YourPlayFabId>";
+
+		function Log(result) {
+			console.log(result)
+			document.getElementById("resultOutput").innerHTML += result + "\n"
+		}
+		
+		function LogPlayFabError(result) {
+			console.log(result)
+			Log(PlayFab.GenerateErrorReport(result));
+		}
+			
+		function Test() {
+			PlayFabClientSDK.LoginWithCustomID({
+				TitleId: PlayFab.settings.titleId,
+				CustomId: document.getElementById("loginId").value,
+				CreateAccount: true
+			}, LoginCallback);
+		}
+
+		async function LoginCallback(result, error) {
+			if (error) {
+				LogPlayFabError(error)
+				return
+			}
+			
+			Log("Logged in.");
+
+			const connection = new signalR.HubConnectionBuilder()
+			.withUrl("https://"+PlayFab.settings.titleId+".playfabapi.com/PubSub",{
+				headers: {"X-EntityToken": result.data.EntityToken.EntityToken},
+				withCredentials: false
+		    })
+			.withAutomaticReconnect()
+			.configureLogging(signalR.LogLevel.Information)
+			.build();
+
+			connection.onclose(async () => {
+				await start();
+			});
+			
+			try {
+				await connection.start();
+				Log("SignalR Connected.");
+			} catch (err) {
+				Log(err);
+			}
+		}
+
+	</script>
+</head>
+<body>
+    PlayFab<br />
+    LoginID: <input type="text" id="loginId" value="GettingStartedGuide"><br />
+    <input type="button" value="Test" onclick="Test()"><br />
+    Result:<br />
+    <textarea id="resultOutput" cols="100" rows="50"></textarea><br />
+</body>
+</html>
