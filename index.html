@@ -3,57 +3,167 @@
 <head>
     <meta charset="utf-8">
     <title>PlayFab Test</title>
-    <script type="text/javascript" src="https://download.playfab.com/PlayFabClientApi.js"></script>
+	<!-- https://github.com/PlayFab/JavaScriptSDK -->
+    <script type="text/javascript" src="PlayFab/PlayFabClientApi.js"></script>
+    <script type="text/javascript" src="PlayFab/PlayFabMultiplayerApi.js"></script>
 	<!--<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.js"></script>-->
 	<script src="signalr.js"></script><!-- above script, but removed headers X-Requested-With and X-SignalR-User-Agent -->
 	<script>
-		PlayFab.settings.titleId = "<YourPlayFabId>";
+		console.log(window)
+		
+		PlayFab.settings.titleId = "YourIdHere"
 
 		function Log(result) {
-			console.log(result)
+			if (result.error) {
+				var playfabError = PlayFab.GenerateErrorReport(result)
+				console.log(playfabError)
+				console.log(result)
+				result = playfabError
+			} else {
+				console.log(result)
+			}
+
 			document.getElementById("resultOutput").innerHTML += result + "\n"
 		}
-		
-		function LogPlayFabError(result) {
-			console.log(result)
-			Log(PlayFab.GenerateErrorReport(result));
-		}
-			
-		function Test() {
-			PlayFabClientSDK.LoginWithCustomID({
-				TitleId: PlayFab.settings.titleId,
-				CustomId: document.getElementById("loginId").value,
-				CreateAccount: true
-			}, LoginCallback);
+
+		function StartTest() {
+			try {
+				Log("LoginWithCustomID.")
+				PlayFabClientSDK.LoginWithCustomID({
+					TitleId: PlayFab.settings.titleId,
+					CustomId: document.getElementById("loginId").value,
+					CreateAccount: true
+				}, LoginCallback)
+			} catch (err) {
+				return Log(err)
+			}
 		}
 
 		async function LoginCallback(result, error) {
-			if (error) {
-				LogPlayFabError(error)
-				return
-			}
-			
-			Log("Logged in.");
-
-			const connection = new signalR.HubConnectionBuilder()
-			.withUrl("https://"+PlayFab.settings.titleId+".playfabapi.com/PubSub",{
-				headers: {"X-EntityToken": result.data.EntityToken.EntityToken},
-				withCredentials: false
-		    })
-			.withAutomaticReconnect()
-			.configureLogging(signalR.LogLevel.Information)
-			.build();
-
-			connection.onclose(async () => {
-				await start();
-			});
-			
 			try {
-				await connection.start();
-				Log("SignalR Connected.");
+				if (error) { throw error }
+				
+				Log("Logged in.")
+				console.log(window)
+				
+				window.connection = new signalR.HubConnectionBuilder()
+				.withUrl("https://"+PlayFab.settings.titleId+".playfabapi.com/PubSub",{
+					headers: {"X-EntityToken": result.data.EntityToken.EntityToken},
+					withCredentials: false
+				})
+				.withAutomaticReconnect()
+				.configureLogging(signalR.LogLevel.Information)
+				.build()
+
+				Log("Connecting SignalR.")
+				await connection.start()
+		
+				Log("SignalR Connected.")
+				console.log(connection)
+
+				connection.on("ReceiveMessage", function(message) {
+					Log("ReceiveMessage")
+					console.log(message)
+				})
+				connection.on("ReceiveSubscriptionChangeMessage", function(message) {
+					Log("ReceiveSubscriptionChangeMessage")
+					console.log(message)
+				})
+				//connection.onclose(async () => {
+				//	await start()
+				//})
+				
+				Log("Starting session.")
+				var result = await connection.invoke("StartOrRecoverSession", {
+					traceParent: "00-84678fd69ae13e41fce1333289bcf482-22d157fb94ea4827-01"
+				})
+				
+				console.log(result)
+				window.connectionHandle = result.newConnectionHandle
+				window.playerEntity = {
+					Id: PlayFab._internalSettings.authenticationContext.EntityId,
+					Type: PlayFab._internalSettings.authenticationContext.EntityType,
+				}
+				
+				// Only want player to be a member of 1 lobby at a time
+				Log("Checking lobby membership.")
+				PlayFabMultiplayerSDK.FindLobbies({
+					Filter: "lobby/amMember eq 'true'"
+				}, FindLobbyCallback)
 			} catch (err) {
-				Log(err);
+				return Log(err)
 			}
+		}
+		
+		function FindLobbyCallback(result, error) {
+			try {
+				if (error) { throw error }
+				
+				console.log(result)
+				
+				if (result.data.Lobbies.length > 0) {
+					Log("Existing lobby found.")
+					PlayFabMultiplayerSDK.GetLobby({
+						LobbyId: result.data.Lobbies[0].LobbyId
+					}, GetLobbyCallback)
+				} else {	
+					Log("Creating Lobby.")
+					PlayFabMultiplayerSDK.CreateLobby({
+						Owner: playerEntity,
+						Members: [{
+							MemberEntity: playerEntity,
+							MemberData: {},
+						}],
+						MaxPlayers: 2,
+						UseConnections: true
+					}, CreateLobbyCallback)
+				}
+			} catch (err) {
+				return Log(err)
+			}
+		}
+		
+		function GetLobbyCallback(result, error) {
+			try {
+				if (error) { throw error }
+				Log("Got lobby, subscribing to lobby changes.")
+				console.log(result)
+				SubscribeToLobby(result.data.Lobby.LobbyId)
+			} catch (err) {
+				return Log(err)
+			}
+		}
+		
+		function CreateLobbyCallback(result, error) {
+			try {
+				if (error) { throw error }
+				Log("Lobby created, subscribing to lobby changes.")
+				console.log(result)
+				SubscribeToLobby(result.data.LobbyId)
+			} catch (err) {
+				return Log(err)
+			}
+		}
+	
+		function SubscribeToLobby(id) {
+			try {
+				window.lobbyId = id
+				PlayFabMultiplayerSDK.SubscribeToLobbyResource({
+					Type: "LobbyChange",
+					EntityKey: playerEntity,
+					ResourceId: id,
+					SubscriptionVersion: 1,
+					PubSubConnectionHandle: connectionHandle
+				}, SubscribeToLobbyCallback)
+			} catch (err) {
+				return Log(err)
+			}
+		}
+
+		function SubscribeToLobbyCallback(result, error) {
+			if (error) { return Log(error) }
+			
+			Log("Subscribed to lobby.")
 		}
 
 	</script>
@@ -61,7 +171,7 @@
 <body>
     PlayFab<br />
     LoginID: <input type="text" id="loginId" value="GettingStartedGuide"><br />
-    <input type="button" value="Test" onclick="Test()"><br />
+    <input type="button" value="Test" onclick="StartTest()"><br />
     Result:<br />
     <textarea id="resultOutput" cols="100" rows="50"></textarea><br />
 </body>
