@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <title>PlayFab Test</title>
+	<meta charset="utf-8">
+	<title>PlayFab Test</title>
 	<!-- https://github.com/PlayFab/JavaScriptSDK -->
-    <script type="text/javascript" src="PlayFab/PlayFabClientApi.js"></script>
-    <script type="text/javascript" src="PlayFab/PlayFabMultiplayerApi.js"></script>
+	<script type="text/javascript" src="PlayFab/PlayFabClientApi.js"></script>
+	<script type="text/javascript" src="PlayFab/PlayFabMultiplayerApi.js"></script>
 	<!--<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.js"></script>-->
 	<script src="signalr.js"></script><!-- above script, but removed headers X-Requested-With and X-SignalR-User-Agent -->
 	<script>
@@ -49,10 +49,12 @@
 				window.connection = new signalR.HubConnectionBuilder()
 				.withUrl("https://"+PlayFab.settings.titleId+".playfabapi.com/PubSub",{
 					headers: {"X-EntityToken": result.data.EntityToken.EntityToken},
+					transport: signalR.HttpTransportType.LongPolling,
 					withCredentials: false
 				})
-				.withAutomaticReconnect()
-				.configureLogging(signalR.LogLevel.Information)
+				//.withAutomaticReconnect()
+				//.configureLogging(signalR.LogLevel.Information)
+				.configureLogging(signalR.LogLevel.Trace)
 				.build()
 
 				Log("Connecting SignalR.")
@@ -69,9 +71,9 @@
 					Log("ReceiveSubscriptionChangeMessage")
 					console.log(message)
 				})
-				//connection.onclose(async () => {
-				//	await start()
-				//})
+				connection.onclose(function() {
+					Log("SignalR close.")
+				})
 				
 				Log("Starting session.")
 				var result = await connection.invoke("StartOrRecoverSession", {
@@ -87,9 +89,7 @@
 				
 				// Only want player to be a member of 1 lobby at a time
 				Log("Checking lobby membership.")
-				PlayFabMultiplayerSDK.FindLobbies({
-					Filter: "lobby/amMember eq 'true'"
-				}, FindLobbyCallback)
+				PlayFabMultiplayerSDK.FindLobbies({Filter: "lobby/amMember eq 'true'"}, FindLobbyCallback)
 			} catch (err) {
 				return Log(err)
 			}
@@ -103,17 +103,12 @@
 				
 				if (result.data.Lobbies.length > 0) {
 					Log("Existing lobby found.")
-					PlayFabMultiplayerSDK.GetLobby({
-						LobbyId: result.data.Lobbies[0].LobbyId
-					}, GetLobbyCallback)
+					PlayFabMultiplayerSDK.GetLobby({LobbyId: result.data.Lobbies[0].LobbyId}, GetLobbyCallback)
 				} else {	
 					Log("Creating Lobby.")
 					PlayFabMultiplayerSDK.CreateLobby({
 						Owner: playerEntity,
-						Members: [{
-							MemberEntity: playerEntity,
-							MemberData: {},
-						}],
+						Members: [{MemberEntity: playerEntity}],
 						MaxPlayers: 2,
 						UseConnections: true
 					}, CreateLobbyCallback)
@@ -169,10 +164,10 @@
 	</script>
 </head>
 <body>
-    PlayFab<br />
-    LoginID: <input type="text" id="loginId" value="GettingStartedGuide"><br />
-    <input type="button" value="Test" onclick="StartTest()"><br />
-    Result:<br />
-    <textarea id="resultOutput" cols="100" rows="50"></textarea><br />
+	PlayFab<br />
+	LoginID: <input type="text" id="loginId" value="GettingStartedGuide"><br />
+	<input type="button" value="Test" onclick="StartTest()"><br />
+	Result:<br />
+	<textarea id="resultOutput" cols="100" rows="50"></textarea><br />
 </body>
 </html>
